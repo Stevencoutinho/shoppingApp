@@ -1,86 +1,55 @@
 package main
 
 import (
-	"fmt"
+	// ロギングを行うパッケージ
+	"log"
 
-	"github.com/jinzhu/gorm"
+	// HTTPを扱うパッケージ
+	"net/http"
+
+	// Gin
+	"github.com/gin-gonic/gin"
+
+	// MySQL用ドライバ
 	_ "github.com/jinzhu/gorm/dialects/mysql"
+
+	// コントローラー
+	controller "shoppingApp/controllers/controller"
 )
 
-// DB上のテーブル、カラムと構造体との関連付けが自動的に行われる
-type Product struct {
-	ID          int    `gorm:"primary_key;not null"`
-	ProductName string `gorm:"type:varchar(200);not null"`
-	Memo        string `gorm:"type:varchar(400)"`
-	Status      string `gorm:"type:char(2);not null"`
-}
-
-func getGormConnect() *gorm.DB {
-	DBMS := "mysql"
-	USER := ""
-	PASS := ""
-	PROTOCOL := "tcp(localhost:3306)"
-	DBNAME := ""
-	CONNECT := USER + ":" + PASS + "@" + PROTOCOL + "/" + DBNAME
-	db, err := gorm.Open(DBMS, CONNECT)
-
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// DBエンジンを「InnoDB」に設定
-	db.Set("gorm:table_options", "ENGINE=InnoDB")
-
-	// 詳細なログを表示
-	db.LogMode(true)
-
-	// 登録するテーブル名を単数形にする（デフォルトは複数形）
-	db.SingularTable(true)
-
-	// マイグレーション（テーブルが無い時は自動生成）
-	db.AutoMigrate(&Product{})
-
-	fmt.Println("db connected: ", &db)
-	return db
-}
-
-// 商品テーブルにレコードを追加
-func insertProduct(registerProduct *Product) {
-	db := getGormConnect()
-
-	// insert文
-	db.Create(&registerProduct)
-	defer db.Close()
-}
-
-// 商品テーブルのレコードを全件取得
-func findAllProduct() []Product {
-	db := getGormConnect()
-	var products []Product
-
-	// select文
-	db.Order("ID asc").Find(&products)
-	defer db.Close()
-	return products
-}
-
 func main() {
-	// Productテーブルにデータを運ぶための構造体を初期化
-	var product = Product{
-		ProductName: "テスト商品",
-		Memo:        "テスト商品です",
-		Status:      "01",
-	}
+	// サーバーを起動する
+	serve()
+}
 
-	// 構造体のポインタを渡す
-	insertProduct(&product)
+func serve() {
+	// デフォルトのミドルウェアでginのルーターを作成
+	// Logger と アプリケーションクラッシュをキャッチするRecoveryミドルウェア を保有しています
+	router := gin.Default()
 
-	// Productテーブルのレコードを全件取得する
-	resultProducts := findAllProduct()
+	// 静的ファイルのパスを指定
+	router.Static("/views", "./views")
 
-	// Productテーブルのレコードを全件表示する
-	for i := range resultProducts {
-		fmt.Printf("index: %d, 商品ID: %d, 商品名: %s, メモ: %s, ステータス: %s\n",
-			i, resultProducts[i].ID, resultProducts[i].ProductName, resultProducts[i].Memo, resultProducts[i].Status)
+	// ルーター設定
+	// URLへのアクセスに対して静的ページを返す
+	router.StaticFS("/shoppingapp", http.Dir("./views/static"))
+
+	// 全ての商品情報のJSONを返す
+	router.GET("/fetchAllProducts", controller.FetchAllProducts)
+
+	// １つの商品情報の状態のJSONを返す
+	router.GET("/fetchProduct", controller.FindProduct)
+
+	// 商品情報をDBへ登録する
+	router.POST("/addProduct", controller.AddProduct)
+
+	// 商品情報の状態を変更する
+	router.POST("/changeStateProduct", controller.ChangeStateProduct)
+
+	// 商品情報を削除する
+	router.POST("/deleteProduct", controller.DeleteProduct)
+
+	if err := router.Run(":8080"); err != nil {
+		log.Fatal("Server Run Failed.: ", err)
 	}
 }
